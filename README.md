@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# App router 다국어 처리
 
-## Getting Started
+## i18next(internationalization)
 
-First, run the development server:
+웹/앱 어플리케이션에 다국어를 지원하는 자바스크립트 프레임워크
+React, Angular, Vue.js를 비롯한 Node.js, Deno, PHP, iOS, Android 등 다양한 플랫폼을 지원한다.
+유저 locale(지역/언어)을 감지해 사용중인 브라우저 환경의 언어를 제공한다.
+작동 방식
+클라이언트 - window.navigator
+const locale = window.navigator.language
+navigator.language는 유저가 사용중인 브라우저 UI를 저장하고 브라우저가 직접 세팅한다. UTS Locale Identifiers 형식의 string을 반환한다.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+서버 - HTTP Header의 Accept-Language
+사용자가 웹에 접근했을 때 요청하는 HTTP의 Accept-Language 헤더에 기반하여 감지한다.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Next.js 다국어 처리 방법
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+사용 라이브러리
+next-intl
+Next.js를 위한 번역 라이브러리로 13버전에 생긴 App Router를 사용한 Client, Server 사이드 컴포넌트의 다국어 처리를 도와준다.
+next-i18next는 12버전 이후 업데이트를 제공하지 않는다.
+설치 및 파일 구조
+다국어가 적용되는 컴포넌트는 [locale] 폴더 안에 위치
+설치: npm install next-intl
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+파일 구조
+├── messages (1)
+│ ├── en.json
+│ └── ...
+├── middleware.ts (2)
+└── app
+└── [locale]
+├── layout.tsx (3)
+└── page.tsx (4)
 
-## Learn More
+## 설정 및 사용 - 클라이언트 컴포넌트
 
-To learn more about Next.js, take a look at the following resources:
+1. messages/(언어).json 파일 생성
+   로컬 혹은 원격 데이터 JSON 파일로 생성 (e.g en.json, jp.json)
+   {
+   "Index": {
+   "title": "Hello world!"
+   }
+   }
+2. middleware 설정
+   요청에 따른 locale 설정 및 redirect, rewrites 등 설정
+   import createMiddleware from 'next-intl/middleware';
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+export default createMiddleware({
+// A list of all locales that are supported
+locales: ['en', 'de'],
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+// If this locale is matched, pathnames work without a prefix (e.g. `/about`)
+defaultLocale: 'en'
+});
 
-## Deploy on Vercel
+export const config = {
+// Skip all paths that should not be internationalized. This example skips the
+// folders "api", "\_next" and all files with an extension (e.g. favicon.ico)
+matcher: ['/((?!api|_next|.*\\..*).*)']
+};
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+3. app/[locale]/layout.tsx 설정
+   layout 문서에 NextIntlClientProvider 를 넣어준다.
+   import {NextIntlClientProvider} from 'next-intl';
+   import {notFound} from 'next/navigation';
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+export function generateStaticParams() {
+return [{locale: 'en'}, {locale: 'de'}];
+}
+
+export default async function LocaleLayout({children, params: {locale}}) {
+let messages;
+try {
+messages = (await import(`../../messages/${locale}.json`)).default;
+} catch (error) {
+notFound();
+}
+
+return (
+<html lang={locale}>
+<body>
+<NextIntlClientProvider locale={locale} messages={messages}>
+{children}
+</NextIntlClientProvider>
+</body>
+</html>
+);
+} 4. app/[locale]/page.tsx 설정
+다국어 적용이 필요한 컴포넌트에 useTranslations를 사용한다.
+'use client';
+
+import {useTranslations} from 'next-intl';
+
+export default function Index() {
+const t = useTranslations('Index');
+return <h1>{t('title')}</h1>;
+}
+설정 및 사용 - 서버 컴포넌트
+상단 클라이언트 컴포넌트 설정의 1, 2, 4번은 동일함
+
+- I18n.ts 파일 생성 및 설정
+  컨피그 파일을 설정해 두면 한번의 요청으로 모든 서버 컴포넌트에서 동일하게 호출된다.
+  import {getRequestConfig} from 'next-intl/server';
+
+export default getRequestConfig(async ({locale}) => ({
+messages: (await import(`./messages/${locale}.json`)).default
+}));
+
+- next.config.ts 설정
+  컨피그 경로와 플러그인 세팅
+  const withNextIntl = require('next-intl/plugin')(
+  // This is the default (also the `src` folder is supported out of the box)
+  './i18n.ts'
+  );
+
+module.exports = withNextIntl({
+// Other Next.js configuration ...
+});
+
+- app/[locale]/layout.tsx
+  import {useLocale} from 'next-intl';
+  import {notFound} from 'next/navigation';
+
+export default function LocaleLayout({children, params}) {
+const locale = useLocale();
+
+// Show a 404 error if the user requests an unknown locale
+if (params.locale !== locale) {
+notFound();
+}
+
+return (
+<html lang={locale}>
+<body>{children}</body>
+</html>
+);
+}
+정적 렌더링 할 경우, 1) 클라이언트 컴포넌트 처리 방식 2) 외부 컴포넌트에서 API를 가져오는 방식 3) CDN 캐싱을 통한 방식을 권장함
