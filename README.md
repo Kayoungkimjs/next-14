@@ -78,6 +78,7 @@ notFound();
 }
 
 return (
+
 <html lang={locale}>
 <body>
 <NextIntlClientProvider locale={locale} messages={messages}>
@@ -131,6 +132,7 @@ notFound();
 }
 
 return (
+
 <html lang={locale}>
 <body>{children}</body>
 </html>
