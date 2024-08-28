@@ -1,141 +1,133 @@
-# App router 다국어 처리
+# SSG, SSR, ISR
 
-## i18next(internationalization)
+1. `revalidate = 초지정`
+2. fetch next 옵션 or cache 사용 (13+ ver)
 
-웹/앱 어플리케이션에 다국어를 지원하는 자바스크립트 프레임워크
-React, Angular, Vue.js를 비롯한 Node.js, Deno, PHP, iOS, Android 등 다양한 플랫폼을 지원한다.
-유저 locale(지역/언어)을 감지해 사용중인 브라우저 환경의 언어를 제공한다.
-작동 방식
-클라이언트 - window.navigator
-const locale = window.navigator.language
-navigator.language는 유저가 사용중인 브라우저 UI를 저장하고 브라우저가 직접 세팅한다. UTS Locale Identifiers 형식의 string을 반환한다.
+ISR
+fetch 두번째 옵션에 `next: {revalidate: 시간}` 추가, 명시한 시간 간격만큼 데이터 호출
 
-서버 - HTTP Header의 Accept-Language
-사용자가 웹에 접근했을 때 요청하는 HTTP의 Accept-Language 헤더에 기반하여 감지한다.
+SSR
+`next: {revalidate: 0}` or `cache: no-store`. 요청이 올 떄마다 revalidate(HTML을 새롭게 만들어 줌)
 
-## Next.js 다국어 처리 방법
+# Next.js 13
 
-사용 라이브러리
-next-intl
-Next.js를 위한 번역 라이브러리로 13버전에 생긴 App Router를 사용한 Client, Server 사이드 컴포넌트의 다국어 처리를 도와준다.
-next-i18next는 12버전 이후 업데이트를 제공하지 않는다.
-설치 및 파일 구조
-다국어가 적용되는 컴포넌트는 [locale] 폴더 안에 위치
-설치: npm install next-intl
+## App Router
 
-파일 구조
-├── messages (1)
-│ ├── en.json
-│ └── ...
-├── middleware.ts (2)
-└── app
-└── [locale]
-├── layout.tsx (3)
-└── page.tsx (4)
+기존 page router를 대체하는 개념
+`_document`(정적 공통 마크업), `_app`(전체 페이지 공유 로직) => 디렉토리 단위로 제공되는 `layout` 등장
 
-## 설정 및 사용 - 클라이언트 컴포넌트
+## Metadata
 
-1. messages/(언어).json 파일 생성
-   로컬 혹은 원격 데이터 JSON 파일로 생성 (e.g en.json, jp.json)
-   {
-   "Index": {
-   "title": "Hello world!"
-   }
-   }
-2. middleware 설정
-   요청에 따른 locale 설정 및 redirect, rewrites 등 설정
-   import createMiddleware from 'next-intl/middleware';
+Head 태그에 메타 태그 작성 => `layout` or `page`에서 export 하여 사용
+next/head, Head 태그 사용할 수 없음
 
-export default createMiddleware({
-// A list of all locales that are supported
-locales: ['en', 'de'],
+## server side rendering
 
-// If this locale is matched, pathnames work without a prefix (e.g. `/about`)
-defaultLocale: 'en'
-});
+`gerServerSideProps()` 함수 사용 => `fetch` api 사용, `async await`로 비동기 처리
+`getStaticPath` => `generateStaticParams`
 
-export const config = {
-// Skip all paths that should not be internationalized. This example skips the
-// folders "api", "\_next" and all files with an extension (e.g. favicon.ico)
-matcher: ['/((?!api|_next|.*\\..*).*)']
-};
+# Next.js 14
 
-3. app/[locale]/layout.tsx 설정
-   layout 문서에 NextIntlClientProvider 를 넣어준다.
-   import {NextIntlClientProvider} from 'next-intl';
-   import {notFound} from 'next/navigation';
+## Metadata
 
-export function generateStaticParams() {
-return [{locale: 'en'}, {locale: 'de'}];
+UX 관련 viewport, colorScheme, themeColor 정보는 기존 metadata 타입과 분리되어 별도 정의
+
+```typescript
+export const metadata: Metadata = {
+    metadataBase: new URL(META_URL),
+    title: ...
+    description: ..
 }
 
-export default async function LocaleLayout({children, params: {locale}}) {
-let messages;
-try {
-messages = (await import(`../../messages/${locale}.json`)).default;
-} catch (error) {
-notFound();
+export const viewprt: Viewport = {
+    themeColor: 'black'
 }
+```
 
-return (
+<!-- ## route group
 
-<html lang={locale}>
-<body>
-<NextIntlClientProvider locale={locale} messages={messages}>
-{children}
-</NextIntlClientProvider>
-</body>
-</html>
-);
-} 4. app/[locale]/page.tsx 설정
-다국어 적용이 필요한 컴포넌트에 useTranslations를 사용한다.
-'use client';
+실제 라우팅할 경로로 잡히지 않고 단순히 가독성을 위한 그룹핑 역할을 수행
 
-import {useTranslations} from 'next-intl';
+app 디렉토리 아래에서 "()"를 사용
 
-export default function Index() {
-const t = useTranslations('Index');
-return <h1>{t('title')}</h1>;
-}
-설정 및 사용 - 서버 컴포넌트
-상단 클라이언트 컴포넌트 설정의 1, 2, 4번은 동일함
+예를 들어, 로그인 전후를 기준으로 경로를 그룹핑하고 싶은경우 아래와 같이 사용
 
-- I18n.ts 파일 생성 및 설정
-  컨피그 파일을 설정해 두면 한번의 요청으로 모든 서버 컴포넌트에서 동일하게 호출된다.
-  import {getRequestConfig} from 'next-intl/server';
+```typescript
+app
+    ㄴ(beforelogin)
+        ㄴ login
+        ㄴ signup
+    ㄴ(afterlogin)
+        ㄴ content
+        ㄴ explore
+```
 
-export default getRequestConfig(async ({locale}) => ({
-messages: (await import(`./messages/${locale}.json`)).default
-}));
+## parallel route
 
-- next.config.ts 설정
-  컨피그 경로와 플러그인 세팅
-  const withNextIntl = require('next-intl/plugin')(
-  // This is the default (also the `src` folder is supported out of the box)
-  './i18n.ts'
-  );
+같은 디렉토리 레벨의 page.tsx 경로에 page.tsx외에 다른 컴포넌트를 등장시킬수 있음
+app 디렉토리 아래에서 "@"를 사용
 
-module.exports = withNextIntl({
-// Other Next.js configuration ...
-});
+```typescript
+app
+    ㄴ(beforelogin)
+        ㄴ@modal
+        ㄴlogin
+```
 
-- app/[locale]/layout.tsx
-  import {useLocale} from 'next-intl';
-  import {notFound} from 'next/navigation';
+## intercepting route
 
-export default function LocaleLayout({children, params}) {
-const locale = useLocale();
+parallel route와 함께 사용시, 기존 화면에서 위에 그려지게 처리할 수 있음
 
-// Show a 404 error if the user requests an unknown locale
-if (params.locale !== locale) {
-notFound();
-}
+단 이 기능은 다른 페이지에서 "next/Link" 컴포넌트를 이용해서 이동했을 때만 동작하고
 
-return (
+브라우저 창에 주소를 입력해서 접근하거나, 새로고침해서 접근할 경우에는 기존 app router 동작대로, page.tsx 기반으로 라우팅됨
 
-<html lang={locale}>
-<body>{children}</body>
-</html>
-);
-}
-정적 렌더링 할 경우, 1) 클라이언트 컴포넌트 처리 방식 2) 외부 컴포넌트에서 API를 가져오는 방식 3) CDN 캐싱을 통한 방식을 권장함
+
+## private folder
+
+_components 와 같이 사용할 수 있고, 해당 폴더는 next가 route로 인식하지 않음
+
+따라서 route group 처럼 폴더 정리용으로 사용가능
+
+## 예약어
+
+```typescript
+page.tsx layout.tsx template.tsx default.tsx 등의 예약어는 철자가 하나라도 틀릴 경우 제대로 동작하지 않음
+
+(웃기는건 일부는 제대로 동작하고 일부는 동작하지 않음. 그래서 막상 버그를 맞닥뜨리면 어느지점이 문제인지 디버깅하기가 쉽지않을 수 있음. )
+
+특히 소문자, 대문자 여부 주의할 것
+
+page.tsx를 예로 들자면, 파일명을 실수로 Page.tsx로 할 경우 이를 찾아내기가 쉽지않음 주의할것
+
+```
+
+
+## useSelectedLayoutSegment
+```typescript
+클라이언트 컴포넌트에서만 사용가능
+
+현재 컴포넌트가 사용되고 있는 상위 디렉토리 명을 리턴
+
+location.pathname과 용례가 비슷하나, 구분자 없이 상위 디렉토리 명만 리턴한다는 점에서 다름
+
+const segment:string = useSelectedLayoutSegment()
+/**
+ * 예를 들어, 현재 컴포넌트가 import되고 있는 곳이 home일 경우
+ * home을 리턴
+ * **/
+```
+
+## useSelectedLayoutSegments
+```typescript
+클라이언트 컴포넌트에서만 사용가능
+
+route가 중첩으로 구성되어 있을 경우 useSelectedLayoutSegments를 사용해서 속한 모든 segment를 배열 형태로 가져올 수 있음
+
+const segments:string[] = useSelectedLayoutSegments()
+
+/**
+ * 예를 들어, 현재 컴포넌트가 import되고 있는 곳이 compose/tweet일 경우
+ * ['compose','tweet'] 을 리턴
+ * **/
+``` -->
